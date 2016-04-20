@@ -21,6 +21,7 @@ import com.skcraft.launcher.persistence.Persistence;
 import com.skcraft.launcher.swing.SwingHelper;
 import com.skcraft.launcher.update.UpdateManager;
 import com.skcraft.launcher.util.HttpRequest;
+import com.skcraft.launcher.util.Platform;
 import com.skcraft.launcher.util.SharedLocale;
 import com.skcraft.launcher.util.SimpleLogFormatter;
 import com.sun.management.OperatingSystemMXBean;
@@ -88,12 +89,20 @@ public final class Launcher {
     public Launcher(@NonNull File baseDir, @NonNull File configDir) throws IOException {
         SharedLocale.loadBundle("com.skcraft.launcher.lang.Launcher", Locale.getDefault());
 
-        this.baseDir = baseDir;
+        this.config = Persistence.load(new File(configDir, "config.json"), Configuration.class);
+        this.accounts = Persistence.load(new File(configDir, "accounts.dat"), AccountList.class);
+
+        //Overwrite save location if defined by user
+        if (this.config.getInstallLocation() != null) {
+            this.baseDir = new File(config.getInstallLocation());
+            log.info("User defined instance location detected, overwriting current " + config.getInstallLocation());
+        } else {
+            this.baseDir = baseDir;
+        }
+
         this.properties = LauncherUtils.loadProperties(Launcher.class, "launcher.properties", "com.skcraft.launcher.propertiesFile");
         this.instances = new InstanceList(this);
         this.assets = new AssetsRoot(new File(baseDir, "assets"));
-        this.config = Persistence.load(new File(configDir, "config.json"), Configuration.class);
-        this.accounts = Persistence.load(new File(configDir, "accounts.dat"), AccountList.class);
 
         setDefaultConfig();
 
@@ -392,11 +401,52 @@ public final class Launcher {
         if (dir != null) {
             log.info("Using given base directory " + dir.getAbsolutePath());
         } else {
-            dir = new File(".");
+            String appDir="kookylauncher";
+            String homeDir = System.getProperty("user.home", ".");
+            switch ( getPlatform() ) {
+                case LINUX:
+                case SOLARIS:
+                    dir = new File(homeDir, "." + appDir + "/");
+                    break;
+                case WINDOWS:
+                    String applicationData = System.getenv("APPDATA");
+                    if (applicationData != null)
+                        dir = new File(applicationData, "." + appDir + "/");
+                    else
+                        dir = new File(homeDir, "." + appDir + "/");
+                    break;
+                case MAC_OS_X:
+                    dir = new File(homeDir, "Library/Application Support/" + appDir);
+                    break;
+                default:
+                    dir = new File(homeDir, appDir + "/");
+            }
+            //dir = new File(".");
             log.info("Using current directory " + dir.getAbsolutePath());
         }
 
         return new Launcher(dir);
+    }
+
+    /**
+     * Detect platform.
+     *
+     * @return platform
+     */
+    public static Platform getPlatform() {
+        String osName = System.getProperty("os.name").toLowerCase();
+        if (osName.contains("win"))
+            return Platform.WINDOWS;
+        if (osName.contains("mac"))
+            return Platform.MAC_OS_X;
+        if (osName.contains("solaris") || osName.contains("sunos"))
+            return Platform.SOLARIS;
+        if (osName.contains("linux"))
+            return Platform.LINUX;
+        if (osName.contains("unix"))
+            return Platform.LINUX;
+
+        return Platform.UNKNOWN;
     }
 
     /**
@@ -431,5 +481,6 @@ public final class Launcher {
         });
 
     }
+
 
 }
